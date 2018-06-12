@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="bdict",
-    version="0.1.0b2",
+    version="0.1.0b3",
     author="Bar Harel",
     python_requires='>=3.6',
     author_email="bzvi7919@gmail.com",

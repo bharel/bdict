@@ -25,7 +25,7 @@ As you can see, after accessing the handlers dict, and upon key lookup,
 the dict bound the handler functions to the instance.
 """
 __author__ = "Bar Harel"
-__version__ = "0.1.0b2"
+__version__ = "0.1.0b3"
 __license__ = "MIT"
 __all__ = ["BDict"]
 
