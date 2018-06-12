@@ -15,7 +15,7 @@ class Server:
     def on_connect(self, remote_host):
         print(self.name, remote_host)
     handlers = BDict({NewConnectionEvent: on_connect,
-    DisconnectonEven: on_disconnect})
+    DisconnectonEvent: on_disconnect})
 
 >>> s = Server("myserver")
 >>> s.handlers[NewConnectionEvent]("1.2.3.4")
@@ -65,11 +65,9 @@ class BDict(_Dict[_KT, _VT]):
                 inst = None
 
             if inst is None:
-                return (f"<Unbound {self.__class__.__name__} "
-                        f"mapping to {super().__repr__()}>")
+                return (f"<Unbound {self.__class__.__name__}>")
 
-            return (f"<{self.__class__.__name__} bound to {inst!r} "
-                    f"with the following mapping: {super().__repr__()}>")
+            return (f"<{self.__class__.__name__} bound to {inst!r}>")
 
         def bind(self, inst: _Any, *,
                  external: _Dict = None, strong: bool = False) -> None:
@@ -107,7 +105,8 @@ class BDict(_Dict[_KT, _VT]):
 
             if inst is None:
                 raise ReferenceError("Please keep a reference "
-                                     "to the instance or pass 'strong=True'.")
+                                     "to the instance or pass 'strong=True'"
+                                     "to BDict.")
 
             return func.__get__(inst, type(inst))
 
@@ -177,8 +176,7 @@ class BDict(_Dict[_KT, _VT]):
         self.autocache = autocache
 
     def __repr__(self):
-        return (f"<Autobinding {self.__class__.__name__} "
-                f"mapping to {super().__repr__()}>")
+        return (f"<Autobinding {self.__class__.__name__}>")
 
     def __set_name__(self, owner, name):
         self.name = name
