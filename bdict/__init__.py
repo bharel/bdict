@@ -25,17 +25,18 @@ As you can see, after accessing the handlers dict, and upon key lookup,
 the dict bound the handler functions to the instance.
 """
 __author__ = "Bar Harel"
-__version__ = "0.1.0b3"
+__version__ = "0.1.0"
 __license__ = "MIT"
 __all__ = ["BDict"]
 
 
-from typing import (Callable as _Callable, Mapping as _Mapping,
-                    Dict as _Dict, cast as _cast, Union as _Union,
-                    Iterable as _Iterable, Tuple as _Tuple,
-                    Optional as _Optional,
-                    MutableMapping as _MutableMapping, overload as _overload,
-                    TypeVar as _TypeVar, Any as _Any, Type as _Type)
+from typing import (
+    Any as _Any, Callable as _Callable, cast as _cast, Dict as _Dict,
+    Iterable as _Iterable, Mapping as _Mapping,
+    MutableMapping as _MutableMapping, Optional as _Optional,
+    overload as _overload, Tuple as _Tuple, Type as _Type, TypeVar as _TypeVar,
+    Union as _Union)
+
 from weakref import ref as _ref, WeakKeyDictionary as _WeakKeyDictionary
 
 
@@ -46,13 +47,44 @@ BDICT_INPUT_TYPE = _Union[_Iterable[_Tuple[_KT, _VT]], _Mapping[_KT, _VT]]
 
 
 class BDict(_Dict[_KT, _VT]):
-    """An auto method-binding dict"""
+    """An auto method-binding dict
+
+    Attributes:
+        name: The name BDict will show up in the instance dict. Should be
+        the same as the name it's defined with on the class.
+        strong: Whether to strong reference or not. See __init__ for
+        more explanation.
+        autocache: Whether the newly created BDict will be cached on top of
+        the instance. Results in faster access, but with a few caveats. See
+        __init__ for more explanation.
+    """
     __slots__ = ("name", "strong", "_instance_externals", "autocache")
     strong: _Optional[bool]
     name: str
+
+    # Instance externals holds a mapping between an instance and it's externals
+    # dictionary. In case of a non-cached BDict, this is the only way of
+    # retaining external values accross the instance's numerous BoundDicts.
     _instance_externals: _WeakKeyDictionary
 
     class BoundDict(_Dict):
+        """A dict bound to an instance
+
+        This dict might be cached on top of the instance, or it might exist
+        for a limited amount of time non-related to the instance existence.
+
+        Accessing the dict results in methods being automatically bound.
+
+        Adding values to the dict adds them to the "external" dict which holds
+        external inserts. If the dict is not stored on top of the instance,
+        adding external values results in them being stored internally inside
+        BDict, allowing you to retain external values throughout the instance
+        lifetime.
+
+        Attributes:
+            external: dict of external attributes inserted dynamically on
+            top of the BoundDict.
+        """
         __slots__ = ("_inst", "external")
         external: _Dict
 
@@ -71,7 +103,18 @@ class BDict(_Dict[_KT, _VT]):
 
         def bind(self, inst: _Any, *,
                  external: _Dict = None, strong: bool = False) -> None:
-            # inst=None is special
+            """Bind the BoundDict to the given instance.
+
+            Args:
+                inst: Instance to bind it to. Accessing methods will cause them
+                to auto-bind to this instance. Can be anything but None.
+                external: Externally entered values. Used internally.
+                strong: Whether to strong-reference the instance or only weakly
+                reference it.
+            """
+            # Can bind to any type of instance but None.
+            # None marks class-access in __get__, and an unbound BoundDict
+            # during initialization.
             if inst is None:
                 raise ValueError("Must bind to an instance.")
 
@@ -129,7 +172,16 @@ class BDict(_Dict[_KT, _VT]):
             self.external.pop(key, None)
 
     class ClassBoundDict(_MutableMapping):
-        """Temporary proxy bound to the original class"""
+        """Temporary proxy bound to the original class
+
+        Accessing this dict results in binding of methods to the class.
+        It is useful mainly for classmethods.
+
+        Attributes:
+            bdict: Original BDict to proxy all __getitem__ and __setitem__ to.
+            owner: Original class BDict was created in. Methods will be bound
+            to this one.
+        """
         __slots__ = ("bdict", "owner")
 
         def __init__(self, bdict, owner):
