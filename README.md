@@ -74,7 +74,7 @@ KeyError: 123
 `dict_` can be a dict or an iterable of (key, value) pairs and will be used to initialize `BDict`.
 
 `strong` defaults to None and configures whether BDict stores a strong reference to the instance. `False` will cause
-bdict to use only weak references but not work when the original instance dissapears. `True` forces a strong reference
+bdict to use only weak references but not work when the original instance disappears. `True` forces a strong reference
 but might cause a cyclic reference if `autocache` is used. By default (recommended), BDict will attempt to use a weak reference
 and if it fails to bind the cache (due to the instance having `__slots__` or `autocache=False`) it will use a strong reference.
 
