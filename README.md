@@ -72,5 +72,9 @@ KeyError: 123
 `BDict(dict_)`
 
 `dict_` can be a dict or an iterable of (key, value) pairs and will be used to initialize `BDict`.
-
+    
 The class BDict is used on must support weak referencing (the vast majority of custom objects do). If you use `__slots__`, you are able to do this by adding `__weakref__` to the slots.
+
+`BDict.autobind(key, value)`
+
+Allows adding an autobinding entry in the dict (regular additions will not autobind). `key` is the key for access while `value` is the function that will be autobound.
