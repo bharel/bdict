@@ -29,6 +29,8 @@ __version__ = "0.1.0"
 __license__ = "MIT"
 __all__ = ["BDict"]
 
+from collections import ChainMap as _ChainMap
+from itertools import chain as _chain
 
 from typing import (
     Any as _Any, Callable as _Callable, cast as _cast, Dict as _Dict,
@@ -46,130 +48,125 @@ _VT = _TypeVar("_VT", bound=_Callable)
 BDICT_INPUT_TYPE = _Union[_Iterable[_Tuple[_KT, _VT]], _Mapping[_KT, _VT]]
 
 
+class _custom:
+    """Marker for custom value that shouldn't be auto-bound"""
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
+
+    def __repr__(self):
+        return repr(self.value)
+
+
 class BDict(_Dict[_KT, _VT]):
-    """An auto method-binding dict
+    """An auto method-binding dict"""
+    __slots__ = ("_instance_data")
 
-    Attributes:
-        name: The name BDict will show up in the instance dict. Should be
-        the same as the name it's defined with on the class.
-        strong: Whether to strong reference or not. See __init__ for
-        more explanation.
-        autocache: Whether the newly created BDict will be cached on top of
-        the instance. Results in faster access, but with a few caveats. See
-        __init__ for more explanation.
-    """
-    __slots__ = ("name", "strong", "_instance_externals", "autocache")
-    strong: _Optional[bool]
-    name: str
+    # Holds a mapping between an instance and it's unique custom dictionary
+    _instance_data: _WeakKeyDictionary
 
-    # Instance externals holds a mapping between an instance and it's externals
-    # dictionary. In case of a non-cached BDict, this is the only way of
-    # retaining external values accross the instance's numerous BoundDicts.
-    _instance_externals: _WeakKeyDictionary
-
-    class BoundDict(_Dict):
+    class BoundDict(_MutableMapping):
         """A dict bound to an instance
-
-        This dict might be cached on top of the instance, or it might exist
-        for a limited amount of time non-related to the instance existence.
 
         Accessing the dict results in methods being automatically bound.
 
-        Adding values to the dict adds them to the "external" dict which holds
-        external inserts. If the dict is not stored on top of the instance,
-        adding external values results in them being stored internally inside
-        BDict, allowing you to retain external values throughout the instance
-        lifetime.
+        Adding values to the dict adds them to a custom instance dict which
+        holds external inserts. Adding external values results in them being
+        stored internally inside BDict, allowing you to retain external values
+        throughout the instance lifetime.
 
         Attributes:
-            external: dict of external attributes inserted dynamically on
-            top of the BoundDict.
+            inst: Functions will be autobound to this instance.
         """
-        __slots__ = ("_inst", "external")
-        external: _Dict
+        __slots__ = ("inst", "_mapping")
+        _deleted = object()
 
-        _sentinel = object()
+        def __init__(self, inst, bdict, instance_data, _ChainMap=_ChainMap):
+            self.inst = inst
+            self._mapping = _ChainMap(instance_data, bdict)
 
         def __repr__(self):
+            repr_items = []
+            for key, value in self._mapping.items():
+                if value.__class__ is _custom:
+                    repr_items.append(f"{key!r}: {value!r}")
+                else:
+                    repr_items.append(f"{key!r}: (autobinding) {value!r}")
+
+            return (f"{self.__class__.__name__}({', '.join(repr_items)})"
+                    f" bound to {self.inst!r}")
+
+        def autobind(self, key, value):
+            """Add a function that will be autobound"""
+            self._mapping[key] = value
+
+        def __getitem__(self, key, _custom=_custom, _deleted=_deleted):
             try:
-                inst = self._inst()
-            except AttributeError:
-                inst = None
-
-            if inst is None:
-                return (f"<Unbound {self.__class__.__name__}>")
-
-            return (f"<{self.__class__.__name__} bound to {inst!r}>")
-
-        def bind(self, inst: _Any, *,
-                 external: _Dict = None, strong: bool = False) -> None:
-            """Bind the BoundDict to the given instance.
-
-            Args:
-                inst: Instance to bind it to. Accessing methods will cause them
-                to auto-bind to this instance. Can be anything but None.
-                external: Externally entered values. Used internally.
-                strong: Whether to strong-reference the instance or only weakly
-                reference it.
-            """
-            # Can bind to any type of instance but None.
-            # None marks class-access in __get__, and an unbound BoundDict
-            # during initialization.
-            if inst is None:
-                raise ValueError("Must bind to an instance.")
-
-            if external is not None:
-                self.external = external
-
-            if strong:
-                self._inst = lambda: inst
-            else:
-                self._inst = _ref(inst)
-
-        def __getitem__(self, key: _Any, *, _sentinel=_sentinel) -> _Any:
-            try:
-                func = super().__getitem__(key)
+                value = self._mapping[key]
             except KeyError:
-                external = getattr(self, "external", None)
-                if not external or key not in external:
-                    raise
-                super().__setitem__(key, _sentinel)
-                func = _sentinel
+                raise KeyError(key) from None
 
-            if func is _sentinel:
-                return self.external[key]
+            if value.__class__ is _custom:
+                return value.value
 
-            try:
-                inst = self._inst()
-            except AttributeError as exc:
-                raise TypeError(f"Unbound {self.__class__.__name__} is not "
-                                f"subscriptable. Please bind() first."
-                                ) from exc
+            if value is _deleted:
+                raise KeyError(key)
 
-            if inst is None:
-                raise ReferenceError("Please keep a reference "
-                                     "to the instance or pass 'strong=True'"
-                                     "to BDict.")
+            inst = self.inst
+            return value.__get__(inst, inst.__class__)
 
-            return func.__get__(inst, type(inst))
+        def __setitem__(self, key, value):
+            self._mapping[key] = _custom(value)
 
-        def __setitem__(self, key: _Any, value: _Any, *,
-                        _sentinel=_sentinel) -> None:
-            # Still initializing (pre-bind)
-            if self._inst is None:
-                super().__setitem__(key, value)
-
-            super().__setitem__(key, _sentinel)
+        def __delitem__(self, key, _deleted=_deleted):
+            mapping = self._mapping
 
             try:
-                self.external[key] = value
-            except AttributeError:
-                self.external = {}
-                self.external[key] = value
+                value = self._mapping[key]
+            except KeyError:
+                raise KeyError(key) from None
 
-        def __delitem__(self, key: _Any) -> None:
-            super().__delitem__(key)
-            self.external.pop(key, None)
+            if value is _deleted:
+                raise KeyError(key)
+
+            if key not in mapping.parents:
+                del mapping[key]
+                return
+
+            mapping[key] = _deleted
+
+        def __iter__(self, _deleted=_deleted):
+            return (key for key, value in self._mapping.items()
+                    if value is not _deleted)
+
+        def __len__(self):
+            return sum(1 for key in self)
+
+        def pop(self, key, default=_deleted, _deleted=_deleted,
+                _custom=_custom):
+            mapping = self._mapping
+
+            value = mapping.get(key, default)
+
+            if value is _deleted:
+                if default is _deleted:
+                    raise KeyError(key)
+                return default
+
+            if key in mapping.parents:
+                mapping[key] = _deleted
+            else:
+                del mapping[key]
+
+            if value.__class__ is _custom:
+                return value.value
+
+            inst = self.inst
+            return value.__get__(inst, inst.__class__)
+
+        def clear(self):
+            self._mapping = _ChainMap()
 
     class ClassBoundDict(_MutableMapping):
         """Temporary proxy bound to the original class
@@ -182,20 +179,29 @@ class BDict(_Dict[_KT, _VT]):
             owner: Original class BDict was created in. Methods will be bound
             to this one.
         """
-        __slots__ = ("bdict", "owner")
+        __slots__ = ("owner", "bdict")
 
-        def __init__(self, bdict, owner):
+        def __init__(self, owner, bdict):
             self.bdict = bdict
             self.owner = owner
+
+        def autobind(self, key, value):
+            """Add a function that will be autobound"""
+            self.bdict[key] = value
 
         def __repr__(self):
             return f"<classbound proxy to {self.bdict!r}>"
 
-        def __getitem__(self, key):
+        def __getitem__(self, key, _custom=_custom):
+            value = self.bdict[key]
+
+            if value.__class__ is _custom:
+                return value.value
+
             return self.bdict[key].__get__(None, self.owner)
 
         def __setitem__(self, key, value):
-            self.bdict[key] = value
+            self.bdict[key] = _custom(value)
 
         def __delitem__(self, key):
             del self.bdict[key]
@@ -206,32 +212,19 @@ class BDict(_Dict[_KT, _VT]):
         def __len__(self):
             return len(self.bdict)
 
-    def __init__(self, dict_: BDICT_INPUT_TYPE[_KT, _VT], *,
-                 strong: bool = None, autocache: bool = True) -> None:
-        """Initialize the auto method-binding dict
-
-        Args:
-            dict: Any mapping between keys to class functions
-            strong: Whether to strongly reference instances upon dict
-            creation or only weakly reference. By default, a weak reference
-            will be created in order to avoid a reference cycle. Unless forced
-            using 'strong=False', in case of a class which defines __slots__,
-            the dict will be created with a strong reference as __slots__
-            create caching issues.
-            Reference to class'es BDict will always be strongly referenced.
-            autocache: Upon access, will automatically cache the BoundDict
-            on the instance. On classes with __slots__ it's suggested to
-            turn this off as it will not work either case.
-        """
-        super().__init__(_cast(_Mapping[_KT, _VT], dict_))
-        self.strong = strong
-        self.autocache = autocache
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._instance_data = _WeakKeyDictionary()
 
     def __repr__(self):
-        return (f"<Autobinding {self.__class__.__name__}>")
+        repr_items = []
+        for key, value in self.items():
+            if value.__class__ is _custom:
+                repr_items.append(f"{key!r}: {value!r}")
+            else:
+                repr_items.append(f"{key!r}: (autobinding) {value!r}")
 
-    def __set_name__(self, owner, name):
-        self.name = name
+        return (f"{self.__class__.__name__}({', '.join(repr_items)})")
 
     @_overload
     def __get__(self, inst: None, owner: _Type) -> ClassBoundDict:
@@ -241,75 +234,13 @@ class BDict(_Dict[_KT, _VT]):
     def __get__(self, inst: _T, owner: _Type[_T]) -> BoundDict:
         ...
 
-    def __get__(self, inst, owner,
-                BoundDict=BoundDict, bind=BoundDict.bind):
+    def __get__(self, inst, owner, BoundDict=BoundDict,
+                ClassBoundDict=ClassBoundDict):
 
         if inst is None:
-            return self.ClassBoundDict(self, owner)
+            return ClassBoundDict(owner, self)
 
-        strong = self.strong
-
-        # Keep in mind it also copies the dict!
-        bdict = BoundDict(self)
-
-        # Check if instance externals already exist for this instance
-        externals = getattr(self, "_instance_externals", None)
-        if externals and inst in externals:
-            # Shortcut - Bind straight away and send off
-            bind(bdict, strong=True if strong is None else strong,
-                 external=externals[inst])
-            return bdict
-
-        try:
-            # If autocache is enabled
-            if self.autocache:
-
-                # Attempt to bind to instance
-                setattr(inst, self.name, bdict)
-
-                # Instance bound, no need for external dict
-                use_external = False
-
-            # Must use external as we need to store the dict's
-            # changes externally (dict is not located on instance)
-            else:
-                use_external = True
-
-        # Class implemented __slots__, failed binding to instance
-        except AttributeError:
-            # Must use external (as we cannot autocache).
-            use_external = True
-
-        if use_external:
-            # Should attempt to strong ref in order not to lose the external
-            # dict
-            if strong is None: strong = True
-
-            # Create _instance_externals if one does not exist
-            if externals is None:
-                externals = self._instance_externals = _WeakKeyDictionary()
-
-            # Get the appropriate external and bind
-            external: _Dict
-
-            try:
-                # Keep in mind - local variable "external" is set even if
-                # TypeError is thrown.
-                external = externals[inst] = {}
-            except TypeError:
-                # Instance has __slots__ without __weakref__
-                import warnings
-                msg = (
-                    f"Cannot create a weak reference to "
-                    f"'{inst.__class__.__name__}' object. Changes to BoundDict"
-                    f" will not be shared accross the instance!")
-                warnings.warn(msg)
-
-            bind(bdict, inst, strong=strong, external=external)
-
-        else:
-            # Weakref is fine
-            if strong is None: strong = False
-            bind(bdict, inst, strong=strong)
+        bdict = BoundDict(inst, self,
+                          self._instance_data.setdefault(inst, {}))
 
         return bdict

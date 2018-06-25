@@ -54,7 +54,7 @@ MyClass
 >>> inst.handlers["class_handle"]()
 MyClass
 ```
-Upon accessing the BDict through an instance, the BDict will be autocached on the BDict, 
+Upon accessing the BDict through an instance, the BDict will create an internal instance data container on the BDict, 
 allowing you to modify it's dictionary and not affect other instances!
 ```Python
 >>> inst.handlers[123] = 456
@@ -69,16 +69,8 @@ KeyError: 123
 
 ## Usage:
 
-`BDict(dict_, *, strong=None, autocache=True)`
+`BDict(dict_)`
 
 `dict_` can be a dict or an iterable of (key, value) pairs and will be used to initialize `BDict`.
 
-`strong` defaults to None and configures whether BDict stores a strong reference to the instance. `False` will cause
-bdict to use only weak references but not work when the original instance dissapears. `True` forces a strong reference
-but might cause a cyclic reference if `autocache` is used. By default (recommended), BDict will attempt to use a weak reference
-and if it fails to bind the cache (due to the instance having `__slots__` or `autocache=False`) it will use a strong reference.
-
-`autocache` configures whether to cache the BDict on the instance. Caching results in faster access but does not work if `__slots__`
-are defined, and will prevent changes made on the class'es BDict from appearing.
-
-If an object is defined using `__slots__`, I highly suggest adding `__weakref__` to the slots.
+The class BDict is used on must support weak referencing (the vast majority of custom objects do). If you use `__slots__`, you are able to do this by adding `__weakref__` to the slots.
