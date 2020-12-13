@@ -19,7 +19,7 @@ class Server:
     def on_connect(self, remote_host):
         print(self.name, remote_host)
 
-    def on_connect(self, remote_host):
+    def on_disconnect(self, remote_host):
         print(self.name, remote_host)
 
     handlers = BDict({NewConnectionEvent: on_connect,
